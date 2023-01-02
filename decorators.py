@@ -1,19 +1,15 @@
 # -*- coding: utf-8 -*-
 
-import cProfile
-import pstats
-
-from datetime import datetime
-from functools import wraps
-from io import StringIO
-from pstats import SortKey
-from time import perf_counter_ns
+import functools
 
 
 def perf_decorator(func):
     """A decorator to get details of function performance and intern calls."""
+    import cProfile
+    from io import StringIO
+    from pstats import SortKey, Stats
 
-    @wraps(func)
+    @functools.wraps(func)
     def wrapper(*args, **kwargs):
         profile = cProfile.Profile()
         profile.enable()
@@ -21,7 +17,7 @@ def perf_decorator(func):
         profile.disable()
 
         str_io = StringIO()
-        profile_stats = pstats.Stats(profile, stream=str_io)
+        profile_stats = Stats(profile, stream=str_io)
 
         sort_by = SortKey.CUMULATIVE
         profile_stats = profile_stats.sort_stats(sort_by)
@@ -37,8 +33,9 @@ def perf_decorator(func):
 
 def time_decorator(func):
     """A decorator to get the elapsed time of a function."""
+    from time import perf_counter_ns
 
-    @wraps(func)
+    @functools.wraps(func)
     def wrapper(*args, **kwargs):
         start = perf_counter_ns()
         value = func(*args, **kwargs)
@@ -67,5 +64,33 @@ def time_decorator(func):
     return wrapper
 
 
-def try_except_decorator(func):
-    pass
+def dircache_decorator(func):
+    """A decorator to cache the result in disk."""
+    import bz2
+    import pickle
+    from pathlib import Path
+    from os.path import dirname
+    from base64 import b64encode
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+
+        # Create cache folder
+        Path(dirname(__file__), '__cache__').mkdir(parents=True, exist_ok=True)
+
+        # Checks if is already cached
+        cache_key = (func.__code__.co_filename, func.__name__, args, kwargs)
+        cache_name_raw = pickle.dumps(cache_key)
+        cache_name = b64encode(cache_name_raw).decode('utf-8')
+
+        cache_path = Path(dirname(__file__), '__cache__', f"{cache_name}.bz2")
+        if cache_path.exists():
+            with bz2.open(cache_path, mode='rb') as file:
+                value = pickle.load(file)
+        else:
+            value = func(*args, **kwargs)
+            with bz2.open(cache_path, mode='wb') as file:
+                pickle.dump(value, file)
+
+        return value
+    return wrapper
