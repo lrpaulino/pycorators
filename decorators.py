@@ -66,30 +66,33 @@ def time_decorator(func):
 
 def dircache_decorator(func):
     """A decorator to cache the result in disk."""
+    import os
     import bz2
     import pickle
     from pathlib import Path
-    from os.path import dirname
     from base64 import b64encode
+    from uuid import uuid5, NAMESPACE_OID
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
 
         # Create cache folder
-        Path(dirname(__file__), '__cache__').mkdir(parents=True, exist_ok=True)
+        cache_root = Path(os.path.dirname(__file__), '__cache__')
+        cache_root.mkdir(parents=True, exist_ok=True)
 
         # Checks if is already cached
         cache_key = (func.__code__.co_filename, func.__name__, args, kwargs)
         cache_name_raw = pickle.dumps(cache_key)
-        cache_name = b64encode(cache_name_raw).decode('utf-8')
+        cache_name_b64 = b64encode(cache_name_raw).decode('utf-8')
+        cache_name = uuid5(NAMESPACE_OID, cache_name_b64).hex
 
-        cache_path = Path(dirname(__file__), '__cache__', f"{cache_name}.bz2")
-        if cache_path.exists():
-            with bz2.open(cache_path, mode='rb') as file:
+        cache_file = Path(cache_root, cache_name).with_suffix('.bz2')
+        if cache_file.exists():
+            with bz2.open(cache_file, mode='rb') as file:
                 value = pickle.load(file)
         else:
             value = func(*args, **kwargs)
-            with bz2.open(cache_path, mode='wb') as file:
+            with bz2.open(cache_file, mode='wb') as file:
                 pickle.dump(value, file)
 
         return value
